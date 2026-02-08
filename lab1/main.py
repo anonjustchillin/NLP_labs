@@ -25,7 +25,8 @@ URL_2 = 'https://hromadske.ua/'
 URLs = [URL_1, URL_2]
 
 DATE_FORMAT = "%Y-%m-%d %H:%M"
-
+START_DATE = datetime(2026, 2, 8, 20, 0)
+END_DATE = datetime(2026, 2, 8, 23, 0)
 
 def news_parser(url, filename):
     response = requests.get(url)
@@ -156,8 +157,8 @@ def plot_freq(ts, output_name):
     x = x_datetime[::5]
     y = ts.Freq_sum[::5]
 
-    left = datetime(2026, 2, 8, 20, 0)
-    right = datetime(2026, 2, 8, 23, 0)
+    left = START_DATE
+    right = END_DATE
 
     plt.plot(x, y)
     plt.xticks(rotation=30, ha='right')
