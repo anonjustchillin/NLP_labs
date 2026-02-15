@@ -11,6 +11,7 @@ import matplotlib.dates as mdates
 import pandas as pd
 from datetime import datetime
 import os.path
+import numpy as np
 
 #nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
@@ -25,8 +26,11 @@ URL_2 = 'https://hromadske.ua/'
 URLs = [URL_1, URL_2]
 
 DATE_FORMAT = "%Y-%m-%d %H:%M"
-START_DATE = datetime(2026, 2, 8, 20, 0)
-END_DATE = datetime(2026, 2, 8, 23, 0)
+DATE_FORMAT_X = "%d %H:%M"
+# 2026-02-09 10:30
+START_DATE = datetime(2026, 2, 9, 0, 0)
+# 2026-02-11 15:38
+END_DATE = datetime(2026, 2, 12, 0, 0)
 
 def news_parser(url, filename):
     response = requests.get(url)
@@ -140,7 +144,7 @@ def update_time_series(ts, words_dict, curr_date_str):
     return ts
 
 
-def create_word_cloud(filename, output_name):
+def create_word_cloud_from_file(filename, output_name):
     text_file = open(filename, "r", encoding="utf-8")
     data = text_file.read()
 
@@ -152,18 +156,68 @@ def create_word_cloud(filename, output_name):
     plt.savefig(output_name)
 
 
+def create_word_cloud_from_csv(ts, output_name):
+    data = ts.Top_5.copy()
+
+    data_syspilne = []
+    data_hromad = []
+    counter = 0
+    flag = True
+
+    for i in data:
+        if counter == 5:
+            flag = not flag
+        if flag:
+            data_syspilne.append(i)
+        else:
+            data_hromad.append(i)
+        counter += 1
+
+    data_syspilne = '\n'.join(data_syspilne)
+    data_hromad = '\n'.join(data_hromad)
+
+    wc_syspilne = WordCloud().generate(data_syspilne)
+    plt.imshow(wc_syspilne, interpolation='bilinear')
+    plt.axis("off")
+    plt.title("Суспільне")
+    plt.show()
+
+    wc_hromad = WordCloud().generate(data_hromad)
+    plt.imshow(wc_hromad, interpolation='bilinear')
+    plt.axis("off")
+    plt.title("hromadske")
+    plt.show()
+
+    data = data.to_string()
+    wordcloud = WordCloud().generate(data)
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis("off")
+    plt.title("All data")
+    plt.show()
+
+    plt.savefig(output_name)
+
+
 def plot_freq(ts, output_name):
     x_datetime = pd.to_datetime(ts.Datetime)
-    x = x_datetime[::5]
-    y = ts.Freq_sum[::5]
+    x1 = x_datetime[::10]
+    y1 = ts.Freq_sum[::10]
+
+    x2 = x_datetime[5::10]
+    y2 = ts.Freq_sum[5::10]
 
     left = START_DATE
     right = END_DATE
 
-    plt.plot(x, y)
+    plt.plot(x1, y1, label="Суспільне")
+    plt.plot(x2, y2, label="hromadske")
     plt.xticks(rotation=30, ha='right')
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    plt.yticks(np.arange(0, 120, 10))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter(DATE_FORMAT_X))
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=10))
     plt.gca().set_xbound(left, right)
+    plt.grid(True)
+    plt.legend()
     plt.show()
 
     plt.savefig(output_name)
@@ -219,11 +273,15 @@ if __name__ == '__main__':
 
         CLOUD_NAME = 'wordcloud_' + str(i) + '.jpg'
         CLOUD_PATH = os.path.join(FOLDER_PATH, CLOUD_NAME)
-        create_word_cloud(FILTERED_FILENAME, CLOUD_PATH)
+        create_word_cloud_from_file(FILTERED_FILENAME, CLOUD_PATH)
 
         ts = update_time_series(ts, words_dict, curr_date_str)
         print(ts)
         ts.to_csv('lab1.csv')
+
+    CLOUD_NAME = 'wordcloud.jpg'
+    CLOUD_PATH = os.path.join(PROJECT_PATH, CLOUD_NAME)
+    create_word_cloud_from_csv(ts, CLOUD_PATH)
 
     PLOT_NAME = 'freq_plot.jpg'
     plot_freq(ts, PLOT_NAME)
