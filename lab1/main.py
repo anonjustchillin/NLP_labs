@@ -165,16 +165,23 @@ def create_word_cloud_from_csv(ts, output_name):
     flag = True
 
     for i in data:
-        if counter == 5:
-            flag = not flag
         if flag:
             data_syspilne.append(i)
         else:
             data_hromad.append(i)
+        if counter == 4:
+            flag = not flag
+            counter = 0
         counter += 1
 
     data_syspilne = '\n'.join(data_syspilne)
+    # print(data_syspilne)
+    # print('///////////////////')
     data_hromad = '\n'.join(data_hromad)
+    # print(data_hromad)
+
+    print(len(data_syspilne))
+    print(len(data_hromad))
 
     wc_syspilne = WordCloud().generate(data_syspilne)
     plt.imshow(wc_syspilne, interpolation='bilinear')
