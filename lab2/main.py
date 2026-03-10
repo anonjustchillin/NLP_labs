@@ -20,8 +20,7 @@ stop_words = set(stopwords.words('english'))
 tokenizer = RegexpTokenizer(r'\w+')
 
 PROJECT_PATH = 'D:\\uni\\3курс\\NLP\\NLP_labs\lab2'
-CSV_NAME = 'lab2.csv'
-CSV_PATH = os.path.join(PROJECT_PATH, CSV_NAME)
+SEP = '|'
 
 headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36'
@@ -70,12 +69,13 @@ def site_parser(url, filename):
     #quotes = soup.find_all('p')
 
     with open(filename, "w", encoding="utf-8") as output_file:
-        csvwriter = csv.writer(output_file, delimiter='|')
+        csvwriter = csv.writer(output_file, delimiter=SEP)
         csvwriter.writerow(CSV_FIELDS)
 
         #print(f'----------------------- КОМЕНТАРІ {url} ---------------------------------')
         counter = 0
         for review in reviews:
+            review = review.replace('\n', ' ')
             csvwriter.writerow([str(counter), review])
             counter += 1
         #print('-----------------------------------------------------------------------')
@@ -83,45 +83,34 @@ def site_parser(url, filename):
     return
 
 
-def translate_data(filename, output_name):
-    text_file = open(filename, "r", encoding="utf-8")
-    data = text_file.read()
-    data = data.split('\n')
+def translate_data(df):
+    def translate_line(r):
+        line = r['Comment']
+        translation = GoogleTranslator(source="uk", target="en").translate(line)
+        return translation
 
-    with open(output_name, "w", encoding="utf-8") as output_file:
-        for line in data:
-            translation = GoogleTranslator(source="uk", target="en").translate(line)
-            print(translation)
-            translated_line = translation + '\n'
-            output_file.write(translated_line)
-
-    return
+    df['Comment'] = df.apply(translate_line, axis=1)
+    return df
 
 
-def filter_data(filename, output_name):
-    text_file = open(filename, "r", encoding="utf-8")
-    data = text_file.read()
-
-    # turns words into tokens and removes punctuation
-    tokens = tokenizer.tokenize(data.lower())
-
-    # remove stopwords
-    filtered_tokens = [word for word in tokens if word not in stop_words]
-
-    # stemming
+def clean_data(df):
     ps = PorterStemmer()
-    stemmed_tokens = [ps.stem(word) for word in filtered_tokens]
-    text_raw = " ".join(stemmed_tokens)
-    text_raw = re.sub(r'\d+', '', text_raw)
 
-    text_raw = re.findall('[a-zA-Z]+', str(text_raw))
+    def clean_row(r):
+        tokens = r['Comment']
+        # turns words into tokens and removes punctuation
+        filtered_row = [word for word in tokens if word not in stop_words]
+        stemmed_row = [ps.stem(word) for word in filtered_row]
+        text_raw = " ".join(stemmed_row)
+        text_raw = re.sub(r'\d+', '', text_raw)
+        text_raw = re.findall('[a-zA-Z]+', str(text_raw))
+        return text_raw
 
-    with open(output_name, "w", encoding="utf-8") as output_file:
-        for line in text_raw:
-            #print(line)
-            output_file.write(line+'\n')
+    df['Comment'] = df['Comment'].str.lower()
+    df['Comment'] = df.apply(lambda x: tokenizer.tokenize(x['Comment']), axis=1)
+    df['Comment'] = df.apply(clean_row, axis=1)
 
-    return
+    return df
 
 
 def count_words(filename):
@@ -143,6 +132,49 @@ def count_words(filename):
     return words_dict
 
 
+def analyze_data(filename, url_name, print_process=False):
+    raw_df = pd.read_csv(filename, sep=SEP, index_col=0)
+
+    if print_process:
+        print('RAW DATA')
+        print(raw_df.head())
+        print(raw_df.tail())
+        print()
+    # translate to eng
+    # delete stopwords, numbers, symbols
+    # tokenize + lemitization
+
+    path = get_filename('translated_text_', url_name)
+    if not os.path.exists(path):
+        translated_df = translate_data(raw_df)
+        translated_df.to_csv(path, sep=SEP)
+    else:
+        translated_df = pd.read_csv(path, sep=SEP, index_col=0)
+    if print_process:
+        print('TRANSLATED DATA')
+        print(translated_df.head())
+        print(translated_df.tail())
+        print()
+
+    path = get_filename('cleaned_text_', url_name)
+    if not os.path.exists(path):
+        cleaned_df = clean_data(translated_df)
+        cleaned_df.to_csv(path, sep=SEP)
+    else:
+        cleaned_df = pd.read_csv(path, sep=SEP, index_col=0)
+    if print_process:
+        print('CLEANED DATA')
+        print(cleaned_df.head())
+        print(cleaned_df.tail())
+        print()
+
+
+def get_filename(name, url_name):
+    filename = name + url_name + '.csv'
+    filename = os.path.join(PROJECT_PATH, filename)
+    return filename
+
+
 if __name__ == '__main__':
     URL = URL_1
     if URL == URL_1:
@@ -150,8 +182,11 @@ if __name__ == '__main__':
     else:
         url_name = 'touch'
 
-    FILENAME = 'raw_text_' + url_name + '.csv'
-    FILENAME = os.path.join(PROJECT_PATH, FILENAME)
-    #view_site(URL)
-    site_parser(URL, FILENAME)
+    FILENAME = get_filename('raw_text_', url_name)
+
+    if not os.path.exists(FILENAME):
+        #view_site(URL)
+        site_parser(URL, FILENAME)
+    else:
+        analyze_data(FILENAME, url_name, True)
 
