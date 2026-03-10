@@ -3,17 +3,16 @@ import requests
 import csv
 import re
 import cloudscraper
+import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
 from nltk.stem import PorterStemmer
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from deep_translator import GoogleTranslator
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import pandas as pd
-from datetime import datetime
 import os.path
 import numpy as np
+import matplotlib.pyplot as plt
 
 #nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
@@ -104,7 +103,8 @@ def clean_data(df):
         text_raw = " ".join(stemmed_row)
         text_raw = re.sub(r'\d+', '', text_raw)
         text_raw = re.findall('[a-zA-Z]+', str(text_raw))
-        return text_raw
+        text = ' '.join(text_raw)
+        return text
 
     df['Comment'] = df['Comment'].str.lower()
     df['Comment'] = df.apply(lambda x: tokenizer.tokenize(x['Comment']), axis=1)
@@ -113,23 +113,15 @@ def clean_data(df):
     return df
 
 
-def count_words(filename):
-    text_file = open(filename, "r", encoding="utf-8")
-    data = text_file.read()
-    data = data.split('\n')
+def sentiment_analysis(df):
+    def get_sentiment(text):
+        scores = analyzer.polarity_scores(text)
+        sentiment = 1 if scores['pos'] > 0 else 0
+        return sentiment
 
-    words_dict = dict()
-    for word in data:
-        if word in words_dict:
-            words_dict[word] = words_dict[word] + 1
-        else:
-            words_dict[word] = 1
-
-    words_dict = dict(sorted(words_dict.items(), key=lambda item: item[1], reverse=True))
-
-    print(words_dict)
-
-    return words_dict
+    analyzer = SentimentIntensityAnalyzer()
+    df['Sentiment'] = df['Comment'].apply(get_sentiment)
+    return df
 
 
 def analyze_data(filename, url_name, print_process=False):
@@ -168,15 +160,63 @@ def analyze_data(filename, url_name, print_process=False):
         print(cleaned_df.tail())
         print()
 
+    # sentiment analysis
+    path = get_filename('sentiment_text_', url_name)
+    if not os.path.exists(path):
+        senti_df = sentiment_analysis(cleaned_df)
+        senti_df.to_csv(path, sep=SEP)
+    else:
+        senti_df = pd.read_csv(path, sep=SEP, index_col=0)
+    if print_process:
+        print('SENTIMENT DATA')
+        print(senti_df.head())
+        print(senti_df.tail())
+        print()
+
+    path = get_filename('result_', url_name)
+    if not os.path.exists(path):
+        df = pd.concat([
+                        senti_df['Sentiment'],
+                        translated_df['Comment'],
+                        raw_df['Comment']],
+                       axis=1)
+        df.columns = ['Sentiment',
+                      'Translated_comment',
+                      'Original_comment']
+        df.to_csv(path, sep=SEP)
+
+    return
+
+
+def view_result(filename, url_name):
+    df = pd.read_csv(filename, sep=SEP, index_col=0)
+    print(df.head())
+    print()
+    print(df.tail())
+    print()
+    df['Sentiment'] = df['Sentiment'].astype('category')
+    print(df['Sentiment'].value_counts())
+
+    len_pos = len(df.loc[df['Sentiment'] == 1])
+    len_neg = len(df.loc[df['Sentiment'] == 0])
+    plt.bar(['negative', 'positive'], [len_neg, len_pos])
+    plt.title(f'Pos/Neg review count for {url_name}')
+    plt.show()
+
+    return
+
 
 def get_filename(name, url_name):
     filename = name + url_name + '.csv'
-    filename = os.path.join(PROJECT_PATH, filename)
+    folderpath = os.path.join(PROJECT_PATH, url_name)
+    if not os.path.exists(folderpath):
+        os.makedirs(folderpath)
+    filename = os.path.join(folderpath, filename)
     return filename
 
 
 if __name__ == '__main__':
-    URL = URL_1
+    URL = URL_2
     if URL == URL_1:
         url_name = 'rozetka'
     else:
@@ -188,5 +228,7 @@ if __name__ == '__main__':
         #view_site(URL)
         site_parser(URL, FILENAME)
     else:
-        analyze_data(FILENAME, url_name, True)
+        #analyze_data(FILENAME, url_name)
+        RESULT_FILENAME = get_filename('result_', url_name)
+        view_result(RESULT_FILENAME, url_name)
 
