@@ -12,6 +12,9 @@ from deep_translator import GoogleTranslator
 import pandas as pd
 import os.path
 import numpy as np
+import tensorflow as tf
+from tensorflow.keras.layers import TextVectorization
+import pickle
 import matplotlib.pyplot as plt
 
 #nltk.download('stopwords')
@@ -92,23 +95,34 @@ def translate_data(df):
     return df
 
 
-def clean_data(df):
+def clean_data(df, column_name='Comment'):
     ps = PorterStemmer()
 
     def clean_row(r):
-        tokens = r['Comment']
+        tokens = r[column_name]
         # turns words into tokens and removes punctuation
         filtered_row = [word for word in tokens if word not in stop_words]
         stemmed_row = [ps.stem(word) for word in filtered_row]
         text_raw = " ".join(stemmed_row)
+
+        # посилання
+        text_raw = re.sub(r"https?://\S+|www\.\S+", '', text_raw)
+        # html теги
+        text_raw = re.sub(r"<.*?>", '', text_raw)
+        # пунктуація
+        text_raw = re.sub(r"[^\w\s]", '', text_raw)
+        # слова з цифрами
+        text_raw = re.sub(r"\w*\d\w*", '', text_raw)
+        # цифри
         text_raw = re.sub(r'\d+', '', text_raw)
+
         text_raw = re.findall('[a-zA-Z]+', str(text_raw))
         text = ' '.join(text_raw)
         return text
 
-    df['Comment'] = df['Comment'].str.lower()
-    df['Comment'] = df.apply(lambda x: tokenizer.tokenize(x['Comment']), axis=1)
-    df['Comment'] = df.apply(clean_row, axis=1)
+    df[column_name] = df[column_name].str.lower()
+    df[column_name] = df.apply(lambda x: tokenizer.tokenize(x[column_name]), axis=1)
+    df[column_name] = df.apply(clean_row, axis=1)
 
     return df
 
@@ -188,6 +202,54 @@ def analyze_data(filename, url_name, print_process=False):
     return
 
 
+def classify_via_model(filename, url_name, eng_comments='Translated_comment'):
+    df = pd.read_csv(filename, sep=SEP, index_col=0)
+    ps = PorterStemmer()
+
+    def prepare_text(text):
+        text = [word for word in text.split(' ') if word not in stop_words]
+        text = [ps.stem(word) for word in text]
+        text = " ".join(text)
+
+        text = text.lower()
+
+        # посилання
+        text = tf.strings.regex_replace(text, r"https?://\S+|www\.\S+", "")
+        # html теги
+        text = tf.strings.regex_replace(text, r"<.*?>", "")
+        # пунктуація
+        text = tf.strings.regex_replace(text, r"[^\w\s]", "")
+        # слова з цифрами
+        text = tf.strings.regex_replace(text, r"\w*\d\w*", "")
+        # цифри
+        text = tf.strings.regex_replace(text, r'\d+', "")
+        # непотрібні пробіли
+        text = tf.strings.strip(text)
+
+        return text
+
+    model = tf.keras.models.load_model('classify_reviews.keras')
+
+    df['Prepared_comments'] = df[eng_comments].map(lambda x: prepare_text(x).numpy().decode('utf-8'))
+
+    pickle_layer = pickle.load(open("tv_layer.pkl", "rb"))
+    vectorize_layer = TextVectorization.from_config(pickle_layer['config'])
+    # You have to call `adapt` with some dummy data (BUG in Keras)
+    vectorize_layer.adapt(tf.data.Dataset.from_tensor_slices(["xyz"]))
+    vectorize_layer.set_weights(pickle_layer['weights'])
+
+    prepared_data = vectorize_layer(tf.constant(df['Prepared_comments']))
+    predictions = model.predict(prepared_data)
+    predicted = (predictions >= 0.5).astype(int).flatten()
+
+    df['Model'] = predicted
+    len_pos = len(df.loc[df['Sentiment'] == 1])
+    len_neg = len(df.loc[df['Sentiment'] == 0])
+    plt.bar(['negative', 'positive'], [len_neg, len_pos])
+    plt.title(f'Pos/Neg review count for {url_name} (keras classification)')
+    plt.show()
+
+
 def view_result(filename, url_name):
     df = pd.read_csv(filename, sep=SEP, index_col=0)
     print(df.head())
@@ -200,7 +262,7 @@ def view_result(filename, url_name):
     len_pos = len(df.loc[df['Sentiment'] == 1])
     len_neg = len(df.loc[df['Sentiment'] == 0])
     plt.bar(['negative', 'positive'], [len_neg, len_pos])
-    plt.title(f'Pos/Neg review count for {url_name}')
+    plt.title(f'Pos/Neg review count for {url_name} (sentiment analysis)')
     plt.show()
 
     return
@@ -216,19 +278,33 @@ def get_filename(name, url_name):
 
 
 if __name__ == '__main__':
-    URL = URL_2
-    if URL == URL_1:
+    print('1 - view site')
+    print('2 - parse site and analyze data')
+    print('3 - view result')
+    choice = int(input('Choice: '))
+
+    print()
+
+    print('1 - Rozetka')
+    print('2 - Touch')
+    chosen_site = int(input('Site: '))
+    if chosen_site == 1:
+        URL = URL_1
         url_name = 'rozetka'
     else:
+        URL = URL_2
         url_name = 'touch'
 
     FILENAME = get_filename('raw_text_', url_name)
+    RESULT_FILENAME = get_filename('result_', url_name)
 
-    if not os.path.exists(FILENAME):
-        #view_site(URL)
-        site_parser(URL, FILENAME)
-    else:
+    if choice == 1:
+        view_site(URL)
+    elif choice == 2:
+        if not os.path.exists(FILENAME):
+            site_parser(URL, FILENAME)
         #analyze_data(FILENAME, url_name)
-        RESULT_FILENAME = get_filename('result_', url_name)
+        classify_via_model(RESULT_FILENAME, url_name)
+    else:
         view_result(RESULT_FILENAME, url_name)
 
