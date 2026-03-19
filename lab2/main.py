@@ -152,7 +152,7 @@ def analyze_data(filename, url_name, print_process=False):
 
     path = get_filename('translated_text_', url_name)
     if not os.path.exists(path):
-        translated_df = translate_data(raw_df)
+        translated_df = translate_data(raw_df.copy())
         translated_df.to_csv(path, sep=SEP)
     else:
         translated_df = pd.read_csv(path, sep=SEP, index_col=0)
@@ -164,7 +164,7 @@ def analyze_data(filename, url_name, print_process=False):
 
     path = get_filename('cleaned_text_', url_name)
     if not os.path.exists(path):
-        cleaned_df = clean_data(translated_df)
+        cleaned_df = clean_data(translated_df.copy())
         cleaned_df.to_csv(path, sep=SEP)
     else:
         cleaned_df = pd.read_csv(path, sep=SEP, index_col=0)
@@ -177,7 +177,7 @@ def analyze_data(filename, url_name, print_process=False):
     # sentiment analysis
     path = get_filename('sentiment_text_', url_name)
     if not os.path.exists(path):
-        senti_df = sentiment_analysis(cleaned_df)
+        senti_df = sentiment_analysis(cleaned_df.copy())
         senti_df.to_csv(path, sep=SEP)
     else:
         senti_df = pd.read_csv(path, sep=SEP, index_col=0)
@@ -202,7 +202,7 @@ def analyze_data(filename, url_name, print_process=False):
     return
 
 
-def classify_via_model(filename, url_name, eng_comments='Translated_comment'):
+def classify_via_model(filename, url_name, eng_comments='Translated_comment', print_process=False):
     df = pd.read_csv(filename, sep=SEP, index_col=0)
     ps = PorterStemmer()
 
@@ -231,31 +231,48 @@ def classify_via_model(filename, url_name, eng_comments='Translated_comment'):
     model = tf.keras.models.load_model('classify_reviews.keras')
 
     df['Prepared_comments'] = df[eng_comments].map(lambda x: prepare_text(x).numpy().decode('utf-8'))
+    if print_process:
+        print(df['Prepared_comments'])
+        print()
 
     pickle_layer = pickle.load(open("tv_layer.pkl", "rb"))
     vectorize_layer = TextVectorization.from_config(pickle_layer['config'])
-    # You have to call `adapt` with some dummy data (BUG in Keras)
-    vectorize_layer.adapt(tf.data.Dataset.from_tensor_slices(["xyz"]))
-    vectorize_layer.set_weights(pickle_layer['weights'])
+
+    with open("vocabulary.txt", "r") as f:
+        vocabulary = [line.strip() for line in f.readlines()]
+
+    vectorize_layer.set_vocabulary(vocabulary)
 
     prepared_data = vectorize_layer(tf.constant(df['Prepared_comments']))
+    if print_process:
+        print(prepared_data)
+        print()
+
     predictions = model.predict(prepared_data)
     predicted = (predictions >= 0.5).astype(int).flatten()
 
     df['Model'] = predicted
-    len_pos = len(df.loc[df['Sentiment'] == 1])
-    len_neg = len(df.loc[df['Sentiment'] == 0])
-    plt.bar(['negative', 'positive'], [len_neg, len_pos])
-    plt.title(f'Pos/Neg review count for {url_name} (keras classification)')
-    plt.show()
+
+    df.drop('Prepared_comments', axis=1, inplace=True)
+    df = df[['Sentiment', 'Model',
+             'Translated_comment',
+             'Original_comment']]
+
+    path = get_filename('result2_', url_name)
+    df.to_csv(path, sep=SEP)
 
 
 def view_result(filename, url_name):
     df = pd.read_csv(filename, sep=SEP, index_col=0)
+
     print(df.head())
     print()
     print(df.tail())
     print()
+
+    print(df.loc[:, ['Sentiment','Model','Translated_comment']])
+    print()
+
     df['Sentiment'] = df['Sentiment'].astype('category')
     print(df['Sentiment'].value_counts())
 
@@ -263,6 +280,15 @@ def view_result(filename, url_name):
     len_neg = len(df.loc[df['Sentiment'] == 0])
     plt.bar(['negative', 'positive'], [len_neg, len_pos])
     plt.title(f'Pos/Neg review count for {url_name} (sentiment analysis)')
+    plt.show()
+
+    df['Model'] = df['Model'].astype('category')
+    print(df['Model'].value_counts())
+
+    len_pos = len(df.loc[df['Model'] == 1])
+    len_neg = len(df.loc[df['Model'] == 0])
+    plt.bar(['negative', 'positive'], [len_neg, len_pos])
+    plt.title(f'Pos/Neg review count for {url_name} (keras classification)')
     plt.show()
 
     return
@@ -301,10 +327,10 @@ if __name__ == '__main__':
     if choice == 1:
         view_site(URL)
     elif choice == 2:
-        if not os.path.exists(FILENAME):
-            site_parser(URL, FILENAME)
-        #analyze_data(FILENAME, url_name)
-        classify_via_model(RESULT_FILENAME, url_name)
+        site_parser(URL, FILENAME)
+        analyze_data(FILENAME, url_name)
+        #classify_via_model(RESULT_FILENAME, url_name)
     else:
+        RESULT_FILENAME = get_filename('result2_', url_name)
         view_result(RESULT_FILENAME, url_name)
 
