@@ -16,7 +16,7 @@ import stanza
 
 # частотний аналіз
 # частотні повторення тегів
-# українською! прибрати переклад
+# українською! прибрати переклад на англ
 # графіки
 
 tokenizer = RegexpTokenizer(r'\w+')
@@ -62,17 +62,16 @@ def news_parser(url, filename):
 
 def filter_data_1(filename, output_name):
     data = pd.read_csv(filename, index_col=0)
-    print(data)
+    #print(data)
 
-    # remove punctuation, numbers, eng words
-    text_file = open(filename, "r", encoding="utf-8")
-    data = text_file.read()
+    # remove punctuation, numbers, translate eng words
 
     def en_to_uk(text):
         translation = GoogleTranslator(source="en", target="uk").translate(text)
         return translation
 
-    def clean_text(text):
+    def clean_text(r):
+        text = r['Titles']
         # переклад з англ на укр
         if re.search('[a-zA-Z]', text):
             text = en_to_uk(text)
@@ -90,15 +89,26 @@ def filter_data_1(filename, output_name):
         #  
         text = re.sub(r' ', ' ', text)
 
+        text = text.lower()
+
         return text
 
+    clean_data = data.apply(clean_text, axis=1)
+    #print(clean_data)
 
-
+    clean_data.to_csv(output_name, index=True)
 
     return
 
 
 def filter_data_2(filename, output_name):
+    # stanza.download('uk', processors='tokenize,mwt,pos,lemma')
+    data = pd.read_csv(filename, index_col=0)
+
+    nlp = stanza.Pipeline(language='uk', processors='tokenize,mwt,pos,lemma')
+
+    # combine all title and do the nlp thing
+
     return
 
 if __name__ == '__main__':
@@ -121,6 +131,9 @@ if __name__ == '__main__':
         news_parser(URL, RAW_FILENAME_PATH)
 
     CLEAN_1_FILENAME_PATH = os.path.join(FOLDER_PATH, "cleaned_text_1.csv")
-    filter_data_1(RAW_FILENAME_PATH, CLEAN_1_FILENAME_PATH)
+    if not os.path.exists(CLEAN_1_FILENAME_PATH):
+        filter_data_1(RAW_FILENAME_PATH, CLEAN_1_FILENAME_PATH)
 
-
+    CLEAN_2_FILENAME_PATH = os.path.join(FOLDER_PATH, "cleaned_text_2.csv")
+    #if not os.path.exists(CLEAN_2_FILENAME_PATH):
+    filter_data_2(RAW_FILENAME_PATH, CLEAN_2_FILENAME_PATH)
