@@ -31,7 +31,7 @@ URL_2 = 'https://hromadske.ua/'
 URL_NAME_1 = 'suspilne'
 URL_NAME_2 = 'hromadske'
 
-RAW_FILENAME = 'raw_text.txt'
+RAW_FILENAME = 'raw_text.csv'
 
 
 def view_site(url):
@@ -50,42 +50,56 @@ def news_parser(url, filename):
     else:
         quotes = soup.find_all('h3')
 
-    with open(filename, "w", encoding="utf-8") as output_file:
-        print(f'----------------------- СТРІЧКА НОВИН {url} ---------------------------------')
-        for quote in quotes:
-            print(quote.text)
-            output_file.write(quote.text)
-            output_file.write('\n')
-        print('-----------------------------------------------------------------------')
+    # to pandas df
+    data = pd.DataFrame(columns=['Titles'])
+    for quote in quotes:
+        data.loc[len(data)] = quote.text
+    print(data)
+    data.to_csv(filename, index=True)
 
     return
 
 
-def filter_data(filename, output_name):
+def filter_data_1(filename, output_name):
+    data = pd.read_csv(filename, index_col=0)
+    print(data)
+
+    # remove punctuation, numbers, eng words
     text_file = open(filename, "r", encoding="utf-8")
     data = text_file.read()
 
-    # turns words into tokens and removes punctuation
-    tokens = tokenizer.tokenize(data.lower())
+    def en_to_uk(text):
+        translation = GoogleTranslator(source="en", target="uk").translate(text)
+        return translation
 
-    # remove stopwords
-    filtered_tokens = [word for word in tokens if word not in stop_words]
+    def clean_text(text):
+        # переклад з англ на укр
+        if re.search('[a-zA-Z]', text):
+            text = en_to_uk(text)
 
-    # stemming
-    ps = PorterStemmer()
-    stemmed_tokens = [ps.stem(word) for word in filtered_tokens]
-    text_raw = " ".join(stemmed_tokens)
-    text_raw = re.sub(r'\d+', '', text_raw)
+        # посилання
+        text = re.sub(r"https?://\S+|www\.\S+", '', text)
+        # html теги
+        text = re.sub(r"<.*?>", '', text)
+        # пунктуація
+        text = re.sub(r"[^\w\s]", '', text)
+        # слова з цифрами
+        text = re.sub(r"\w*\d\w*", '', text)
+        # цифри
+        text = re.sub(r'\d+', '', text)
+        #  
+        text = re.sub(r' ', ' ', text)
 
-    text_raw = re.findall('[a-zA-Z]+', str(text_raw))
+        return text
 
-    with open(output_name, "w", encoding="utf-8") as output_file:
-        for line in text_raw:
-            #print(line)
-            output_file.write(line+'\n')
+
+
 
     return
 
+
+def filter_data_2(filename, output_name):
+    return
 
 if __name__ == '__main__':
     print(f"1 - {URL_1}\n2 - {URL_2}")
@@ -103,4 +117,10 @@ if __name__ == '__main__':
         os.makedirs(FOLDER_PATH)
 
     RAW_FILENAME_PATH = os.path.join(FOLDER_PATH, RAW_FILENAME)
-    #news_parser(URL, RAW_FILENAME_PATH)
+    if not os.path.exists(RAW_FILENAME_PATH):
+        news_parser(URL, RAW_FILENAME_PATH)
+
+    CLEAN_1_FILENAME_PATH = os.path.join(FOLDER_PATH, "cleaned_text_1.csv")
+    filter_data_1(RAW_FILENAME_PATH, CLEAN_1_FILENAME_PATH)
+
+
