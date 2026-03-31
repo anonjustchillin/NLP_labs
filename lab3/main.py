@@ -75,19 +75,23 @@ def filter_data_1(filename, output_name):
         # переклад з англ на укр
         if re.search('[a-zA-Z]', text):
             text = en_to_uk(text)
+            if re.search('[a-zA-Z]', text):
+                text = re.sub('[a-zA-Z]', ' ', text)
 
         # посилання
         text = re.sub(r"https?://\S+|www\.\S+", '', text)
         # html теги
         text = re.sub(r"<.*?>", '', text)
         # пунктуація
-        text = re.sub(r"[^\w\s]", '', text)
+        text = re.sub(r"[^\w\s]", ' ', text)
         # слова з цифрами
         text = re.sub(r"\w*\d\w*", '', text)
         # цифри
         text = re.sub(r'\d+', '', text)
         #  
         text = re.sub(r' ', ' ', text)
+        # extra spaces
+        text = " ".join(text.split())
 
         text = text.lower()
 
@@ -105,9 +109,30 @@ def filter_data_2(filename, output_name):
     # stanza.download('uk', processors='tokenize,mwt,pos,lemma')
     data = pd.read_csv(filename, index_col=0)
 
-    nlp = stanza.Pipeline(language='uk', processors='tokenize,mwt,pos,lemma')
+    nlp = stanza.Pipeline('uk', processors='tokenize,mwt,pos,lemma')
 
-    # combine all title and do the nlp thing
+    # combine all titles and do the nlp thing
+    text_arr =  data['0'].values.tolist()
+    text = ". ".join(text_arr)
+    #print(text)
+
+    doc = nlp(text)
+    #print(doc)
+
+    lemmas = [word.lemma for t in doc.iter_tokens() for word in t.words]
+    pos = [word.upos for t in doc.iter_tokens() for word in t.words]
+    other = [word.feats for t in doc.iter_tokens() for word in t.words]
+
+    tokens_data = pd.DataFrame(
+        {
+            'Word': lemmas,
+            'POS': pos,
+            'Note': other
+        }
+    )
+    # TO-DO DELETE DOTS !!!!
+
+    tokens_data.to_csv(output_name)
 
     return
 
@@ -136,4 +161,4 @@ if __name__ == '__main__':
 
     CLEAN_2_FILENAME_PATH = os.path.join(FOLDER_PATH, "cleaned_text_2.csv")
     #if not os.path.exists(CLEAN_2_FILENAME_PATH):
-    filter_data_2(RAW_FILENAME_PATH, CLEAN_2_FILENAME_PATH)
+    filter_data_2(CLEAN_1_FILENAME_PATH, CLEAN_2_FILENAME_PATH)
