@@ -1,23 +1,15 @@
 from bs4 import BeautifulSoup
 import requests
 import re
-from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
-from nltk.stem import PorterStemmer
 from deep_translator import GoogleTranslator
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import matplotlib.colors as colors
 import pandas as pd
-from datetime import datetime
 import os.path
 import numpy as np
 import stanza
-
-# частотний аналіз
-# частотні повторення тегів
-# українською! прибрати переклад на англ
-# графіки
 
 tokenizer = RegexpTokenizer(r'\w+')
 
@@ -122,11 +114,13 @@ def filter_data_2(filename, output_name):
     lemmas = [word.lemma for t in doc.iter_tokens() for word in t.words]
     pos = [word.upos for t in doc.iter_tokens() for word in t.words]
     other = [word.feats for t in doc.iter_tokens() for word in t.words]
+    word_lens = [word.end_char - word.start_char for t in doc.iter_tokens() for word in t.words]
 
     tokens_data = pd.DataFrame(
         {
             'Word': lemmas,
             'POS': pos,
+            'Length': word_lens,
             'Note': other
         }
     )
@@ -138,6 +132,123 @@ def filter_data_2(filename, output_name):
     return
 
 
+def analyze_data(filename):
+    # func for cool gradient
+    def truncate_colormap(cmap, min_val=0.0, max_val=1.0, n=100):
+        new_cmap = colors.LinearSegmentedColormap.from_list(
+            'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=min_val, b=max_val),
+            cmap(np.linspace(min_val, max_val, n)))
+        return new_cmap
+    # word cloud
+    def show_cloud(data):
+        wordcloud = WordCloud().generate(data)
+        plt.imshow(wordcloud, interpolation='bilinear')
+        plt.axis("off")
+        plt.show()
+        return
+    # freq barplot
+    def show_freq_plot(df, title='Word Count', print_data=True):
+        data = df['Word'].value_counts()
+        if print_data: print(data.head(20))
+
+        x = data.head(15).index.tolist()
+        y = data.head(15).values.tolist()
+
+        fig, ax = plt.subplots(figsize=[12, 8])
+        bars = ax.bar(x, y)
+        plt.grid(True, alpha=0.3)
+
+        y_min, y_max = ax.get_ylim()
+        grad = np.atleast_2d(np.linspace(0, 1, 256)).T
+        ax = bars[0].axes
+        lim = ax.get_xlim() + ax.get_ylim()
+        for bar in bars:
+            bar.set_zorder(1)
+            bar.set_facecolor("none")
+            x, _ = bar.get_xy()
+            w, h = bar.get_width(), bar.get_height()
+
+            c_map = truncate_colormap(plt.cm.plasma, min_val=0,
+                                      max_val=(h - y_min) / (y_max - y_min))
+            ax.imshow(grad, extent=[x, x + w, h, y_min], aspect="auto", zorder=0,
+                      cmap=c_map)
+        ax.axis(lim)
+
+        plt.title(title)
+        plt.xticks(rotation=20)
+        plt.show()
+        return
+
+    # pos barplot
+    def show_pos_plot(df, title='POS Count', print_data=True):
+        data = df['POS'].value_counts()
+        if print_data: print(data)
+
+        x = data.index.tolist()
+        y = data.values.tolist()
+
+        fig, ax = plt.subplots(figsize=[12, 8])
+        bars = ax.bar(x, y)
+        plt.grid(True, alpha=0.3)
+
+        y_min, y_max = ax.get_ylim()
+        grad = np.atleast_2d(np.linspace(0, 1, 256)).T
+        ax = bars[0].axes
+        lim = ax.get_xlim() + ax.get_ylim()
+        for bar in bars:
+            bar.set_zorder(1)
+            bar.set_facecolor("none")
+            x, _ = bar.get_xy()
+            w, h = bar.get_width(), bar.get_height()
+
+            c_map = truncate_colormap(plt.cm.plasma, min_val=0,
+                                      max_val=(h - y_min) / (y_max - y_min))
+            ax.imshow(grad, extent=[x, x + w, h, y_min], aspect="auto", zorder=0,
+                      cmap=c_map)
+        ax.axis(lim)
+
+        plt.title(title)
+        plt.xticks(rotation=45)
+        plt.show()
+        return
+    # word length hist
+    def show_len_hist(df, title='Length Histogram', print_data=True):
+        data = df['Length']
+        if print_data:
+            print(data.sort_values(ascending=False).head(20))
+            print()
+            print(data.sort_values(ascending=True).head(20))
+
+        data.plot.hist()
+        plt.title(title)
+        plt.show()
+
+        return
+
+    data = pd.read_csv(filename, index_col=0)
+
+    data_2 = data.copy()
+    selected_pos = ['ADP', 'PART', 'DET', 'SCONJ', 'CCONJ']
+    #print(data_2[data_2['POS'].isin(selected_pos)])
+    data_2.drop(data_2[data_2['POS'].isin(selected_pos)].index, inplace=True)
+
+    text_arr = data_2['Word'].values.tolist()
+    text = " ".join(text_arr)
+    show_cloud(text)
+
+    show_freq_plot(data)
+    print()
+    show_freq_plot(data_2)
+    print()
+    show_pos_plot(data)
+    print()
+    show_pos_plot(data_2, print_data=False)
+    print()
+    show_len_hist(data)
+    print()
+    show_len_hist(data_2)
+
+    return
 
 
 if __name__ == '__main__':
@@ -164,5 +275,7 @@ if __name__ == '__main__':
         filter_data_1(RAW_FILENAME_PATH, CLEAN_1_FILENAME_PATH)
 
     CLEAN_2_FILENAME_PATH = os.path.join(FOLDER_PATH, "cleaned_text_2.csv")
-    #if not os.path.exists(CLEAN_2_FILENAME_PATH):
-    filter_data_2(CLEAN_1_FILENAME_PATH, CLEAN_2_FILENAME_PATH)
+    if not os.path.exists(CLEAN_2_FILENAME_PATH):
+        filter_data_2(CLEAN_1_FILENAME_PATH, CLEAN_2_FILENAME_PATH)
+
+    analyze_data(CLEAN_2_FILENAME_PATH)
