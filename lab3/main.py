@@ -130,11 +130,15 @@ def filter_data_2(filename, output_name):
             'Note': other
         }
     )
-    # TO-DO DELETE DOTS !!!!
+
+    tokens_data.drop(tokens_data[tokens_data.Word == '.'].index, inplace=True)
 
     tokens_data.to_csv(output_name)
 
     return
+
+
+
 
 if __name__ == '__main__':
     print(f"1 - {URL_1}\n2 - {URL_2}")
