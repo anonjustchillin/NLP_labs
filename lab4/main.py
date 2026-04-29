@@ -193,9 +193,7 @@ def teach_model():
 
     # train/test split
     X_train, X_test, Y_train, Y_test = train_test_split(cleaned_news['Text'],
-                                                        cleaned_news['isFake'],
-                                                        random_state=seed_num,
-                                                        stratify=cleaned_news['isFake'])
+                                                        cleaned_news['isFake'])
 
     # train classifier
     vectorizer = TfidfVectorizer()
@@ -243,11 +241,15 @@ def view_vectorizer():
     return
 
 
-def test_model(filename, output):
-    news = pd.read_csv(filename, index_col=0)
+def test_model(filename, output, name):
+    data = pd.read_csv(filename, index_col=0)
+    print(name+' length: ' + str(len(data)))
 
     # prep text
+    word_count = data['Titles'].str.split().str.len()
+    news = data[~(word_count<=5)]
     news['Text'] = news['Titles'].map(clean_text)
+    print(name+' length (after cleaning): ' + str(len(news)))
 
     # load model
     imported_vec = joblib.load(VECTORIZER_FILE)
@@ -272,7 +274,7 @@ def process_site(url_name):
     raw_filename = os.path.join(folder_path, RAW_FILENAME)
     #news_parser(url, raw_filename)
     output_filename = os.path.join(folder_path, 'output.csv')
-    test_model(raw_filename, output_filename)
+    test_model(raw_filename, output_filename, url_name)
 
 
 if __name__ == '__main__':
