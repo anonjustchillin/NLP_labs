@@ -9,7 +9,15 @@ import matplotlib.colors as colors
 import seaborn as sns
 import pandas as pd
 import os.path
+from gensim.models import Word2Vec
+import gensim
+from nltk.tokenize import sent_tokenize, word_tokenize
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import warnings
+
+warnings.filterwarnings(action='ignore')
 
 PROJECT_PATH = 'D:\\uni\\3курс\\NLP\\NLP_labs\lab5'
 CSV_NAME = 'lab5.csv'
@@ -35,18 +43,6 @@ URLS = {NAME_OLX: ['https://www.olx.ua/uk/transport/legkovye-avtomobili/?currenc
 RAW_FILENAME = 'raw_text.csv'
 CLEANED_FILENAME = 'cleaned_text.csv'
 
-
-# Реалізуйте web-скрапінг будь-яких платформ / виробників з продажу автомобілів.
-# Бажано обробити не менше 3-х джерел.
-# Проведіть агрегацію пропозицій за категоріями:
-#   - позашляховик;
-#   - седан;
-#   - мінівен.
-# Результати збережіть у файлах.
-#
-# Провести порівняльний аналіз пропозицій між платформами.
-#
-
 def view_site(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'lxml')
@@ -54,24 +50,25 @@ def view_site(url):
     return
 
 
-def news_parser(url, filename):
+def news_parser(url, name, filename):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'lxml')
 
-    if url == URL_1:
-        # h2 card-headline
-        quotes = soup.find_all('h2')
+    if name == NAME_OLX:
+        # h4 css-wlcw7o
+        quotes = soup.find_all('h4', class_='css-wlcw7o')
+    elif name == NAME_AUTORIA:
+        quotes = soup.find_all('div', class_='titleS')
     else:
-        # h3 title
-        quotes = soup.find_all('h3', class_='title')
+        quotes = soup.find_all('div', class_='card-name')
 
     # to pandas df
-    data = pd.DataFrame(columns=['Titles'])
+    data = pd.DataFrame(columns=['Title'])
     for quote in quotes:
         data.loc[len(data)] = quote.text
-    print(data)
     data.to_csv(filename, index=True)
-
+    #print(data)
+    #print()
     return
 
 
@@ -95,18 +92,85 @@ def clean_text(text):
     # переклад з укр на англ
     if not re.search('[a-zA-Z]', text):
         text = uk_to_en(text)
+    text = re.sub('[^a-zA-Z ]+', ' ', text)
     # extra spaces
     text = " ".join(text.split())
 
     return text
 
 
-def create_path(name):
-    path = os.path.join(PROJECT_PATH, name)
-    if not os.path.exists(path):
-        os.makedirs(path)
-    return path
+def similarity_analysis(text, title='Similarity analysis'):
+    def cosine_similarity(text1, text2):
+        return
+    def cbow():
+        return
+
 
 
 if __name__ == '__main__':
-    print('hi')
+    flag = False
+    for name in URLS.keys():
+        curr_folder = os.path.join(PROJECT_PATH, name)
+        if os.path.exists(curr_folder):
+            flag = True
+            break
+
+    if not flag:
+        for name, urls in URLS.items():
+            print(f'PARSING {name}...')
+            curr_folder = os.path.join(PROJECT_PATH, name)
+            os.makedirs(curr_folder)
+            for i in range(3):
+                file = os.path.join(curr_folder, name+'_'+str(i)+'.csv')
+                news_parser(urls[i], name, file)
+            print()
+
+        print('MAKING A DATAFRAME')
+        start_idx = 0
+        df = pd.read_csv(os.path.join(os.path.join(PROJECT_PATH, NAME_OLX), NAME_OLX+'_'+str(start_idx)+'.csv'), index_col=0)
+        df['Car_type'] = start_idx
+        df['Site'] = NAME_OLX
+        for name, urls in URLS.items():
+            curr_folder = os.path.join(PROJECT_PATH, name)
+            for i in range(3):
+                if name == NAME_OLX and i == 0: continue
+                file = os.path.join(curr_folder, name+'_'+str(i)+'.csv')
+                temp_df = pd.read_csv(file, index_col=0)
+                if name == NAME_AUTORIA:
+                    temp_df = temp_df.iloc[:-3] # то не оголошення
+                temp_df['Car_type'] = i
+                temp_df['Site'] = name
+                df = pd.concat([df, temp_df]).reset_index(drop=True)
+
+        df.to_csv(RAW_FILENAME, index=True)
+
+        print(df.describe())
+        print(df.head())
+        print(df.tail())
+        print(df['Car_type'].value_counts())
+        print(df['Site'].value_counts())
+        print()
+    else:
+        df = pd.read_csv(RAW_FILENAME, index_col=0)
+
+    print('CLEANING TEXT')
+    print(f'Raw dataframe length: {len(df)}')
+    if not os.path.exists(CLEANED_FILENAME):
+        df['Title_cleaned'] = df['Title'].map(clean_text)
+        df = df[['Title', 'Title_cleaned', 'Car_type', 'Site']]
+    else:
+        df = pd.read_csv(CLEANED_FILENAME, index_col=0)
+
+    #print(df['Title_cleaned'].head())
+    #print(df['Title_cleaned'].tail())
+
+    is_nan = df.isnull().sum().any()
+    print(f'Are there any NaN values? {is_nan}')
+    if is_nan: df.dropna(inplace=True)
+
+    print(f'Cleaned dataframe length: {len(df)}')
+    print()
+    df.to_csv(CLEANED_FILENAME, index=True)
+
+    print('SIMILARITY ANALYSIS')
+    sets_for_analysis = []
