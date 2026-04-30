@@ -5,18 +5,19 @@ from deep_translator import GoogleTranslator
 from nltk.tokenize import RegexpTokenizer
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import matplotlib.colors as colors
+from adjustText import adjust_text
 import seaborn as sns
 import pandas as pd
 import os.path
-from gensim.models import Word2Vec
-import gensim
-from nltk.tokenize import sent_tokenize, word_tokenize
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import euclidean_distances, cosine_similarity
 from sklearn.decomposition import PCA
-import numpy as np
+import stanza
+import random
 import warnings
+
+nlp = stanza.Pipeline('uk', processors='tokenize,mwt,pos,lemma')
+selected_pos = ['ADP', 'PART', 'DET', 'SCONJ', 'CCONJ']
 
 warnings.filterwarnings(action='ignore')
 
@@ -74,9 +75,26 @@ def news_parser(url, name, filename):
 
 
 def clean_text(text):
-    def uk_to_en(text):
-        translation = GoogleTranslator(source="uk", target="en").translate(text)
+    def lemmatize_and_stuff(text):
+        doc = nlp(text)
+        lemmas = [word.lemma for t in doc.iter_tokens() for word in t.words]
+        pos = [word.upos for t in doc.iter_tokens() for word in t.words]
+        tokens_data = pd.DataFrame(
+            {
+                'Word': lemmas,
+                'POS': pos
+            }
+        )
+        tokens_data.drop(tokens_data[tokens_data['POS'].isin(selected_pos)].index, inplace=True)
+
+        return " ".join(tokens_data['Word'])
+
+    def rus_to_uk(text):
+        translation = GoogleTranslator(source="russian", target="ukrainian").translate(text)
         return translation
+
+    # переклад з рос на українську
+    text = rus_to_uk(text)
 
     # посилання
     text = re.sub(r"https?://\S+|www\.\S+", '', text)
@@ -90,31 +108,39 @@ def clean_text(text):
     text = re.sub(r'\d+', '', text)
     #  
     text = re.sub(r' ', ' ', text)
-    # переклад з укр на англ
-    if not re.search('[a-zA-Z]', text):
-        text = uk_to_en(text)
-    text = re.sub('[^a-zA-Z ]+', ' ', text)
+
+    text = lemmatize_and_stuff(text)
+    # пунктуація (ще раз)
+    text = re.sub(r"[^\w\s]", ' ', text)
+
     # extra spaces
     text = " ".join(text.split())
 
     return text.lower()
 
 
-def similarity_analysis(text1, text2, text1_name, text2_name, n=10):
+def similarity_analysis(text1, text2, text1_name, text2_name, N=range(10, 21, 5)):
     def list_to_str(arr):
         return ' '.join(arr)
 
-    def plot_2d_vectors(vectors, words, title=''):
+    def plot_2d_vectors(vectors, words, n, title=''):
         plt.figure(figsize=(12, 5))
         plt.scatter(vectors['PC1'], vectors['PC2'])
+        annotations = []
         for word in words:
-            plt.text(vectors.loc[word, 'PC1'] + 0.02,
-                     vectors.loc[word, 'PC2'] + 0.02, word, fontsize=10)
+            x_space = random.uniform(0.02, 0.09)
+            y_space = random.uniform(0.02, 0.09)
+            annotations.append(plt.text(vectors.loc[word, 'PC1'] + x_space,
+                                        vectors.loc[word, 'PC2'] + y_space,
+                                        word,
+                                        fontsize=10))
 
         plt.title(f'2D Visualization of {n} word vectors' + title)
         plt.xlabel('PC 1')
         plt.ylabel('PC 2')
         plt.grid(True, alpha=0.4)
+        adjust_text(annotations, expand=(1.2, 2),
+                    arrowprops=dict(arrowstyle="->", color='r', lw=0.5))
         plt.show()
 
     def plot_text_heatmap(df, title=''):
@@ -145,11 +171,13 @@ def similarity_analysis(text1, text2, text1_name, text2_name, n=10):
     reduced_vectors = pca.fit_transform(word_vectors)
     pca_df = pd.DataFrame(reduced_vectors,columns=['PC1', 'PC2'],index=word_vectors.index)
     word_freq = word_vectors.sum(axis=1)
-    top_words = word_freq.nlargest(n).index
-    print(f'PCA dataframe {text1_name} vs {text2_name} (only top {n} words by frequency)')
-    print(pca_df.loc[top_words])
-    print()
-    plot_2d_vectors(pca_df.loc[top_words], top_words, f' ({text1_name} vs {text2_name})')
+
+    for n in N:
+        top_words = word_freq.nlargest(n).index
+        print(f'PCA dataframe {text1_name} vs {text2_name} (only top {n} words by frequency)')
+        print(pca_df.loc[top_words])
+        print()
+        plot_2d_vectors(pca_df.loc[top_words], top_words, f' ({text1_name} vs {text2_name})')
 
 
 if __name__ == '__main__':
