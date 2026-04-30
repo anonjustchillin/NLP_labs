@@ -13,7 +13,8 @@ from gensim.models import Word2Vec
 import gensim
 from nltk.tokenize import sent_tokenize, word_tokenize
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics.pairwise import euclidean_distances, cosine_similarity
+from sklearn.decomposition import PCA
 import numpy as np
 import warnings
 
@@ -96,15 +97,59 @@ def clean_text(text):
     # extra spaces
     text = " ".join(text.split())
 
-    return text
+    return text.lower()
 
 
-def similarity_analysis(text, title='Similarity analysis'):
-    def cosine_similarity(text1, text2):
-        return
-    def cbow():
-        return
+def similarity_analysis(text1, text2, text1_name, text2_name, n=10):
+    def list_to_str(arr):
+        return ' '.join(arr)
 
+    def plot_2d_vectors(vectors, words, title=''):
+        plt.figure(figsize=(12, 5))
+        plt.scatter(vectors['PC1'], vectors['PC2'])
+        for word in words:
+            plt.text(vectors.loc[word, 'PC1'] + 0.02,
+                     vectors.loc[word, 'PC2'] + 0.02, word, fontsize=10)
+
+        plt.title(f'2D Visualization of {n} word vectors' + title)
+        plt.xlabel('PC 1')
+        plt.ylabel('PC 2')
+        plt.grid(True, alpha=0.4)
+        plt.show()
+
+    def plot_text_heatmap(df, title=''):
+        plt.figure(figsize=(12, 5))
+        sns.heatmap(df, annot=True, cmap="rocket")
+        plt.title(f'Heatmap {text1_name} and {text2_name}'+title)
+        plt.show()
+
+    text1 = list_to_str(text1)
+    text2 = list_to_str(text2)
+
+    documents = [text1, text2]
+    count_vectorizer = CountVectorizer(stop_words="english")
+    sparse_matrix = count_vectorizer.fit_transform(documents)
+
+    doc_term_matrix = sparse_matrix.todense()
+    df = pd.DataFrame(doc_term_matrix,
+                      columns=count_vectorizer.get_feature_names_out(),
+                      index=[text1_name, text2_name])
+
+    eucld_dist = euclidean_distances(df,df)
+    cos_similarity = cosine_similarity(df, df)
+    plot_text_heatmap(eucld_dist, ' (euclidean distances)')
+    plot_text_heatmap(cos_similarity, ' (cosine similarity)')
+
+    pca = PCA(n_components=2)
+    word_vectors = df.T
+    reduced_vectors = pca.fit_transform(word_vectors)
+    pca_df = pd.DataFrame(reduced_vectors,columns=['PC1', 'PC2'],index=word_vectors.index)
+    word_freq = word_vectors.sum(axis=1)
+    top_words = word_freq.nlargest(n).index
+    print(f'PCA dataframe {text1_name} vs {text2_name} (only top {n} words by frequency)')
+    print(pca_df.loc[top_words])
+    print()
+    plot_2d_vectors(pca_df.loc[top_words], top_words, f' ({text1_name} vs {text2_name})')
 
 
 if __name__ == '__main__':
@@ -166,11 +211,17 @@ if __name__ == '__main__':
 
     is_nan = df.isnull().sum().any()
     print(f'Are there any NaN values? {is_nan}')
-    if is_nan: df.dropna(inplace=True)
-
-    print(f'Cleaned dataframe length: {len(df)}')
+    if is_nan:
+        df.dropna(inplace=True)
+        print(f'Cleaned dataframe length: {len(df)}')
     print()
     df.to_csv(CLEANED_FILENAME, index=True)
 
     print('SIMILARITY ANALYSIS')
-    sets_for_analysis = []
+    car_0 = df.loc[df["Car_type"] == 0, 'Title_cleaned'].to_list()
+    car_1 = df.loc[df["Car_type"] == 1, 'Title_cleaned'].to_list()
+    car_2 = df.loc[df["Car_type"] == 2, 'Title_cleaned'].to_list()
+
+    similarity_analysis(car_0, car_1, AUTO_TYPES[0], AUTO_TYPES[1])
+    similarity_analysis(car_0, car_2, AUTO_TYPES[0], AUTO_TYPES[2])
+    similarity_analysis(car_1, car_2, AUTO_TYPES[1], AUTO_TYPES[2])
