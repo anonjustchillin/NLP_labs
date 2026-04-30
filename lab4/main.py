@@ -7,17 +7,14 @@ from nltk.stem import PorterStemmer
 from sklearn.svm import LinearSVC
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import matplotlib.colors as colors
+import seaborn as sns
 import pandas as pd
 import os.path
-import numpy as np
-import stanza
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import joblib
-import pickle
 
 seed_num = 100
 
@@ -104,15 +101,110 @@ def clean_text(text):
     return text
 
 
-def analyze_text(filename):
-    data = pd.read_csv(filename)
-    # tf-idf
+def analyze_text(name, filename=None, news=None, text_row="Text", top_n=20):
+    # word cloud
+    def show_cloud(data):
+        data_arr = data.values.tolist()
+        text = " ".join(data_arr)
 
-    # лексична дисперсія
+        wordcloud = WordCloud().generate(text)
+        plt.imshow(wordcloud, interpolation='bilinear')
+        plt.axis("off")
+        plt.title(f'WordCloud ({name})')
+        plt.show()
+        return
 
-    # розподіл довжини слів
+    # word length dist
+    def show_word_length_distribution(data):
+        words = ' '.join(data).split()
+        lengths = [len(word) for word in words]
 
-    # біграмний аналіз
+        plt.figure(figsize=(12, 6))
+        plt.grid(alpha=0.4)
+
+        cmap = plt.get_cmap('viridis')
+
+        n, bins, patches = plt.hist(lengths, bins=range(1, 15))
+        bin_centers = 0.5 * (bins[:-1] + bins[1:])
+
+        col = bin_centers - min(bin_centers)
+        col /= max(col)
+
+        for c, p in zip(col, patches):
+            plt.setp(p, 'facecolor', cmap(c))
+
+        plt.xticks(range(1, 15))
+
+        plt.title(f'Word length histogram ({name})')
+        plt.xlabel("Word length")
+        plt.ylabel("Word count")
+        plt.show()
+
+    # bigrams
+    def show_bigrams(data):
+        vectorizer = CountVectorizer(ngram_range=(2, 2))
+        bigram_matrix = vectorizer.fit_transform(data)
+
+        sum_bigrams = bigram_matrix.sum(axis=0)
+        bigrams_freq = [(word, sum_bigrams[0, idx]) for word, idx in vectorizer.vocabulary_.items()]
+        bigrams_freq = sorted(bigrams_freq, key=lambda x: x[1], reverse=True)[:top_n]
+
+        words, counts = zip(*bigrams_freq)
+
+        plt.figure(figsize=(12, 6))
+        plt.grid(alpha=0.4)
+
+        sns.barplot(x=list(counts), y=list(words), hue=list(words), legend=False, palette="viridis")
+
+        plt.title(f'Top {top_n} bigrams by frequency ({name})')
+        plt.xlabel("Frequency")
+        plt.show()
+
+    # tfidf scores
+    def show_tfidf(data):
+        vectorizer = TfidfVectorizer()
+        tfidf_matrix = vectorizer.fit_transform(data)
+
+        print()
+        print(f'First {top_n} items in TfidfVectorizer vocabulary and idf')
+        print(list(vectorizer.vocabulary_.items())[:top_n])
+        print(vectorizer.idf_[:top_n])
+        print()
+
+        avg_tfidf = tfidf_matrix.mean(axis=0)
+        tfidf_scores = [(word, avg_tfidf[0, idx]) for word, idx in vectorizer.vocabulary_.items()]
+        tfidf_scores = sorted(tfidf_scores, key=lambda x: x[1], reverse=True)[:top_n]
+
+        words, scores = zip(*tfidf_scores)
+
+        palette = sns.color_palette("viridis", n_colors=top_n)
+        word_colors = {word: color for word, color in zip(words, palette)}
+
+        plt.figure(figsize=(12, 6))
+        plt.grid(alpha=0.4)
+
+        sns.barplot(x=scores, y=words, hue=words, legend=False, palette=word_colors.values())
+
+        plt.title(f'Top {len(words)} words by TF-IDF ({name})')
+        plt.xlabel("Average TF-IDF")
+        plt.show()
+
+    if news is None:
+        news = pd.read_csv(filename)
+    print()
+    print(f'Dataframe ({name}) row count: {len(news)}')
+
+    # wordcloud
+    show_cloud(news[text_row])
+
+    # word length dist
+    show_word_length_distribution(news[text_row])
+
+    # bigrams
+    show_bigrams(news[text_row])
+
+    # tfidf scores
+    show_tfidf(news[text_row])
 
     return
 
@@ -136,7 +228,7 @@ def labels_barplot(data):
     plt.show()
 
 
-def prepare_train_data(print_res=False):
+def process_train_data(print_res=False):
     # news file
     if not os.path.exists(NEWS_PATH):
         fake_news = pd.read_csv(FAKE_PATH)
@@ -185,6 +277,11 @@ def prepare_train_data(print_res=False):
         # barplot distribution of True and Fake news
         labels_barplot(cleaned_news)
 
+        fake_news = cleaned_news.loc[cleaned_news['isFake'] == 1].copy()
+        true_news = cleaned_news.loc[cleaned_news['isFake'] == 0].copy()
+        analyze_text('fake news for training', news=fake_news)
+        analyze_text('true news for training', news=true_news)
+
     return
 
 
@@ -223,24 +320,6 @@ def teach_model():
     return
 
 
-def view_vectorizer():
-    imported_vec = joblib.load(VECTORIZER_FILE)
-
-    vectorizer = TfidfVectorizer(vocabulary=imported_vec['vocabulary_'])
-    vectorizer.idf_ = imported_vec['idf_']
-    print()
-    print('First 20 items in TfidfVectorizer vocabulary and idf')
-    print(list(vectorizer.vocabulary_.items())[:20])
-    print(vectorizer.idf_[:20])
-    print()
-    print('Last 20 items in TfidfVectorizer vocabulary and idf')
-    print(list(vectorizer.vocabulary_.items())[-20:])
-    print(vectorizer.idf_[-20:])
-    print()
-
-    return
-
-
 def test_model(filename, output, name):
     data = pd.read_csv(filename, index_col=0)
     print(name+' length: ' + str(len(data)))
@@ -272,17 +351,17 @@ def process_site(url_name):
 
     folder_path = create_path(url_name)
     raw_filename = os.path.join(folder_path, RAW_FILENAME)
-    #news_parser(url, raw_filename)
+    news_parser(url, raw_filename)
     output_filename = os.path.join(folder_path, 'output.csv')
     test_model(raw_filename, output_filename, url_name)
+    analyze_text(url_name,filename=output_filename)
 
 
 if __name__ == '__main__':
     #view_site(URL_BBC)
+    #view_site(URL_FOX)
 
-    prepare_train_data(True)
+    process_train_data(True)
     teach_model()
-    if os.path.exists(VECTORIZER_FILE):
-        view_vectorizer()
     process_site(URL_NAME_BBC)
     process_site(URL_NAME_FOX)
