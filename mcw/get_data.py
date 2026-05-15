@@ -46,7 +46,7 @@ class TextManipulation:
                 counter = 0
                 for review in reviews:
                     review = review.replace('\n', ' ')
-                    csvwriter.writerow([str(counter), review, name])
+                    csvwriter.writerow([str(counter), review, name, ''])
                     counter += 1
             raw_df = pd.read_csv(filepath, sep=SEP, index_col=0)
             raw_df.to_csv(self.filepath)
@@ -55,7 +55,7 @@ class TextManipulation:
             df = pd.read_csv(self.filepath, index_col=0)
             for review in reviews:
                 review = review.replace('\n', ' ')
-                df.loc[len(df)] = [review, name, '']
+                df.loc[len(df)] = [review, name, '', '-']
             df.to_csv(self.filepath)
             self.clean_data()
         return
